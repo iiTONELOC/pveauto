@@ -3,6 +3,7 @@ name = "pveauto"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
+description = "Library and command-line tool designed to download and Verify Proxmox Virtual Environment ISO images automatically"
 authors = ["Anthony Tropeano anthonytropeano@me.com"]
 homepage = "https://github.com/iiTONELOC/pveauto"
 repository = "https://github.com/iiTONELOC/pveauto"
