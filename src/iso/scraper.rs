@@ -115,7 +115,7 @@ pub async fn get_latest_iso_info() -> Result<(String, String), Box<dyn Error>> {
     Ok((iso_url, sha256_checksum))
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "iso-scraper-tests"))]
 mod tests {
     use super::*;
 

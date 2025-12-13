@@ -8,14 +8,17 @@ homepage = "https://github.com/iiTONELOC/pveauto"
 repository = "https://github.com/iiTONELOC/pveauto"
 
 [dependencies]
-oxdl = "0.1.4"
+oxdl = "0.1.5"
 regex = "1.12.2"
 reqwest = "0.12.25"
 scraper = "0.25.0"
-tokio = { version = "1.48.0", features = ["rt-multi-thread"] }
+tokio = { version = "1.48.0", features = ["macros", "rt-multi-thread"] }
 
 [lib]  
 doctest = false
 
 [features]
-test-iso-download = []
+server = []
+iso-scraper-tests = []
+iso-download-tests = []
+iso-tests = ["iso-scraper-tests", "iso-download-tests"]
