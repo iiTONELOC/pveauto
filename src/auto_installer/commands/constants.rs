@@ -1,7 +1,7 @@
 use std::{fmt, str::FromStr};
 
 pub const USAGE: &str = r#"
-Usage: pve-auto <command> [options]
+Usage: pveauto <command> [options]
 
 Commands:
   download [path]     Download Proxmox VE ISO to [path], defaults to:
