@@ -1,4 +1,4 @@
-use crate::iso::constants::{ISO_URL_REGEX_PATTERN, PROXMOX_DL_PG_URL};
+use crate::iso::constants::{ISO_URL_REGEX_PATTERN, PROX_DL_PG_URL};
 use oxdl::validator::{is_valid_sha256, is_valid_url};
 use regex::Regex;
 use reqwest::Client;
@@ -13,7 +13,7 @@ use std::error::Error;
 /// Returns an error if the HTTP request fails.
 pub async fn fetch_dl_page() -> Result<String, Box<dyn Error>> {
     let client = Client::new();
-    let resp = client.get(PROXMOX_DL_PG_URL).send().await?;
+    let resp = client.get(PROX_DL_PG_URL).send().await?;
     let resp = resp.error_for_status()?;
     Ok(resp.text().await?)
 }

@@ -41,7 +41,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_download_latest_iso() {
-        let to_file_path = "test_proxmox_iso.iso";
+        let to_file_path = "test_PROX_iso.iso";
         let result = download_latest_iso(to_file_path, None).await;
         let expected = get_latest_iso_info().await;
         assert!(expected.is_ok());
