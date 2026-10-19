@@ -1,9 +1,9 @@
 use crate::answer_file::macros::string_enum;
 
-/* ===================== REBOOT MODE ===================== */
 string_enum!(
-    #[derive(Debug, Clone,  PartialEq, Eq, Hash)]
+    #[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
     pub enum RebootMode {
+        #[default]
         Reboot => "reboot",
         PowerOff => "power-off",
     },
@@ -11,26 +11,16 @@ string_enum!(
     crate::answer_file::sections::global::errors::GlobalConfigError::RebootMode
 );
 
-impl Default for RebootMode {
-    fn default() -> Self {
-        RebootMode::Reboot
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde::{Deserialize, Serialize};
     use std::str::FromStr;
 
-    /* ---------------- DEFAULT ---------------- */
-
     #[test]
     fn default_is_reboot() {
         assert_eq!(RebootMode::default(), RebootMode::Reboot);
     }
-
-    /* ---------------- FROMSTR ---------------- */
 
     #[test]
     fn valid_reboot_mode_parses() {
@@ -49,15 +39,11 @@ mod tests {
         assert!(RebootMode::from_str("shutdown").is_err());
     }
 
-    /* ---------------- DISPLAY ---------------- */
-
     #[test]
     fn display_outputs_canonical_string() {
         assert_eq!(RebootMode::Reboot.to_string(), "reboot");
         assert_eq!(RebootMode::PowerOff.to_string(), "power-off");
     }
-
-    /* ---------------- SERDE ---------------- */
 
     #[test]
     fn serde_deserializes_valid_value() {

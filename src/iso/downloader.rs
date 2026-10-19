@@ -1,62 +1,55 @@
-use crate::iso::scraper::get_latest_iso_info;
-use oxdl::{download_with_updates, validator::verify_file_sha256};
+use crate::iso::scraper::{IsoError, get_latest_iso_info};
+use oxdl::{UpdateFn, download_with_updates, validator::verify_file_sha256};
+use std::path::Path;
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct IsoDownload {
+    pub path: String,
+    pub sha256: String,
+    pub downloaded: bool,
+}
+
+/// Downloads the latest Proxmox VE ISO to `to_file_path` unless a file that already
+/// matches the published checksum is there. A new download replaces the file atomically.
 pub async fn download_latest_iso(
     to_file_path: &str,
-    with_custom_updater: Option<Box<dyn Fn(f32) + Send + Sync>>,
-) -> Result<(String, String, bool), Box<dyn std::error::Error>> {
-    let (iso_url, sha256_checksum) = get_latest_iso_info().await?;
+    with_custom_updater: Option<UpdateFn>,
+) -> Result<IsoDownload, IsoError> {
+    let (iso_url, sha256) = get_latest_iso_info().await?;
 
-    // check if the file already exists has size and valid checksum
-    if std::path::Path::new(to_file_path).exists() {
-        println!("Existing file found. Verifying checksum...");
-        let is_valid = verify_file_sha256(to_file_path, &sha256_checksum).await?;
-        if is_valid {
-            println!("Checksum valid. Skipping download.");
-            return Ok((to_file_path.to_string(), sha256_checksum, false));
-        } else {
-            println!("Checksum mismatch. Re-downloading...");
-        }
-    } else {
-        println!("No existing file found. Proceeding to download...");
+    if Path::new(to_file_path).exists()
+        && verify_file_sha256(to_file_path, &sha256)
+            .await
+            .map_err(IsoError::Verify)?
+    {
+        return Ok(IsoDownload {
+            path: to_file_path.to_string(),
+            sha256,
+            downloaded: false,
+        });
     }
 
-    let res: Result<(), oxdl::DownloadError> = download_with_updates(
-        &iso_url,
-        to_file_path,
-        with_custom_updater,
-        Some(&sha256_checksum),
-    )
-    .await;
-    match res {
-        Ok(_) => Ok((to_file_path.to_string(), sha256_checksum, true)),
-        Err(e) => Err(Box::new(e)),
-    }
+    download_with_updates(&iso_url, to_file_path, with_custom_updater, Some(&sha256)).await?;
+    Ok(IsoDownload {
+        path: to_file_path.to_string(),
+        sha256,
+        downloaded: true,
+    })
 }
 
 #[cfg(all(test, feature = "iso-download-tests"))]
-mod tests {
+mod live_tests {
     use super::*;
-    use std::path::Path;
 
     #[tokio::test]
-    async fn test_download_latest_iso() {
-        let to_file_path = "test_PROX_iso.iso";
-        let result = download_latest_iso(to_file_path, None).await;
-        let expected = get_latest_iso_info().await;
-        assert!(expected.is_ok());
-
-        assert!(result.is_ok());
-        let (downloaded_path, sha256, downloaded) = result.unwrap();
-        let (_, expected_sha256) = expected.unwrap();
-        assert_eq!(downloaded_path, to_file_path);
-        assert!(!sha256.is_empty());
-        assert!(sha256.len() == 64);
-        assert!(sha256 == expected_sha256);
-        assert!(downloaded);
-        assert!(Path::new(to_file_path).exists());
-
-        // Clean up
-        std::fs::remove_file(to_file_path).unwrap();
+    async fn live_download_verifies_and_then_skips() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let dest = dir.path().join("proxmox-ve-latest.iso");
+        let path = dest.to_str().expect("utf8");
+        let first = download_latest_iso(path, None).await.expect("download");
+        assert!(first.downloaded);
+        let second = download_latest_iso(path, None).await.expect("verify");
+        assert!(!second.downloaded);
+        assert_eq!(first.sha256, second.sha256);
     }
 }

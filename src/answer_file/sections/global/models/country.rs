@@ -1,13 +1,13 @@
 use crate::answer_file::sections::global::errors::GlobalConfigError;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::sync::LazyLock;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
     str::FromStr,
 };
 
-static PROX_COUNTRY_NAME_TO_CODE: Lazy<HashMap<String, String>> = Lazy::new(|| {
+static PROX_COUNTRY_NAME_TO_CODE: LazyLock<HashMap<String, String>> = LazyLock::new(|| {
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/data/country_codes.txt"
@@ -22,7 +22,7 @@ static PROX_COUNTRY_NAME_TO_CODE: Lazy<HashMap<String, String>> = Lazy::new(|| {
     .collect()
 });
 
-static PROX_COUNTRY_CODES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static PROX_COUNTRY_CODES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     PROX_COUNTRY_NAME_TO_CODE
         .values()
         .map(|s| s.as_str())

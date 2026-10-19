@@ -80,14 +80,14 @@ macro_rules! string_enum {
     (
         $(#[$meta:meta])*
         $vis:vis enum $name:ident {
-            $($variant:ident => $str:expr),+ $(,)?
+            $($(#[$vmeta:meta])* $variant:ident => $str:expr),+ $(,)?
         },
         $err_ty:ty,
         $err_val:expr $(,)?
     ) => {
         $(#[$meta])*
         $vis enum $name {
-            $($variant),+
+            $($(#[$vmeta])* $variant),+
         }
 
         impl $name {

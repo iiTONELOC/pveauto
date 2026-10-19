@@ -1,17 +1,17 @@
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 
-pub static EMAIL_OR_LOCALHOST_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static EMAIL_OR_LOCALHOST_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$)|^(root|admin|user)@localhost$")
         .expect("invalid EMAIL_OR_LOCALHOST_PATTERN")
 });
 
-pub static FQDN_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static FQDN_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^([a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,63}$")
         .expect("invalid FQDN_PATTERN")
 });
 
-pub static HASHED_PASSWORD_PATTERN: Lazy<Regex> = Lazy::new(|| {
+pub static HASHED_PASSWORD_PATTERN: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^\$6\$rounds=\d{6}\$[./A-Za-z0-9]{1,16}\$[./A-Za-z0-9]{86}$")
         .expect("invalid HASHED_PASSWORD_PATTERN")
 });

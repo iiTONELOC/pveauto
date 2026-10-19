@@ -1,9 +1,9 @@
 use crate::answer_file::sections::global::errors::GlobalConfigError;
-use once_cell::sync::Lazy;
 use serde::{Deserialize, Deserializer, Serialize};
+use std::sync::LazyLock;
 use std::{collections::HashSet, fmt, str::FromStr};
 
-static PROX_TIMEZONES: Lazy<HashSet<&'static str>> = Lazy::new(|| {
+static PROX_TIMEZONES: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     include_str!(concat!(
         env!("CARGO_MANIFEST_DIR"),
         "/src/data/timezones.txt"

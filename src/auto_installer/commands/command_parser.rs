@@ -1,4 +1,4 @@
-use crate::auto_installer::commands::constants::{CommandParseError, Commands, USAGE};
+use crate::auto_installer::commands::constants::{CommandParseError, Commands};
 use std::env;
 
 /// Parse command from CLI arguments
@@ -12,10 +12,7 @@ where
     I: Iterator<Item = String>,
 {
     match args.next().as_deref() {
-        Some("-h") | Some("--help") | Some("help") => {
-            println!("{}", USAGE);
-            Err(CommandParseError)
-        }
+        Some("-h") | Some("--help") | Some("help") => Ok(Commands::Help),
         Some("download") => {
             let dest_path = args.next().unwrap_or_else(Commands::default_download_path);
 
@@ -24,10 +21,7 @@ where
             })
         }
         Some(cmd) => cmd.parse::<Commands>(),
-        None => {
-            eprintln!("{}", USAGE);
-            Err(CommandParseError)
-        }
+        None => Err(CommandParseError),
     }
 }
 
@@ -61,8 +55,9 @@ mod tests {
             ),
             (vec!["serve-answers"], Ok(Commands::ServeAnswers)),
             (vec!["exit"], Ok(Commands::Exit)),
-            (vec!["-h"], Err(CommandParseError)),
-            (vec!["--help"], Err(CommandParseError)),
+            (vec!["-h"], Ok(Commands::Help)),
+            (vec!["--help"], Ok(Commands::Help)),
+            (vec!["help"], Ok(Commands::Help)),
             (vec![], Err(CommandParseError)),
             (vec!["invalid"], Err(CommandParseError)),
         ];

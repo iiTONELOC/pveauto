@@ -185,8 +185,10 @@ mod tests {
 
     #[test]
     fn mailto_validation() {
-        let mut cfg = GlobalConfig::default();
-        cfg.mailto = "admin@example.com".into();
+        let mut cfg = GlobalConfig {
+            mailto: "admin@example.com".into(),
+            ..GlobalConfig::default()
+        };
         assert!(cfg.validate().is_ok());
 
         cfg.mailto = "nope".into();
@@ -195,8 +197,10 @@ mod tests {
 
     #[test]
     fn root_password_hash_validation() {
-        let mut cfg = GlobalConfig::default();
-        cfg.root_password_hashed = "nope".into();
+        let cfg = GlobalConfig {
+            root_password_hashed: "nope".into(),
+            ..GlobalConfig::default()
+        };
         assert_eq!(cfg.validate(), Err(GlobalConfigError::RootPasswordHashed));
     }
 
@@ -204,39 +208,47 @@ mod tests {
 
     #[test]
     fn valid_ssh_public_key_passes_validation() {
-        let mut cfg = GlobalConfig::default();
-        cfg.root_ssh_keys = Some(vec![
-        "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE2J8WcN6i/K3PaY5E9O+V1YxDCEV4VpWw2X2gYdEx+Z test@example"
-            .to_string(),
-    ]);
+        let cfg = GlobalConfig {
+            root_ssh_keys: Some(vec![
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIE2J8WcN6i/K3PaY5E9O+V1YxDCEV4VpWw2X2gYdEx+Z test@example"
+                    .to_string(),
+            ]),
+            ..GlobalConfig::default()
+        };
 
         assert_eq!(cfg.validate(), Ok(()));
     }
 
     #[test]
     fn invalid_ssh_public_key_fails_validation() {
-        let mut cfg = GlobalConfig::default();
-        cfg.root_ssh_keys = Some(vec!["ssh-ed25519 NOT_A_REAL_KEY test@example".to_string()]);
+        let cfg = GlobalConfig {
+            root_ssh_keys: Some(vec!["ssh-ed25519 NOT_A_REAL_KEY test@example".to_string()]),
+            ..GlobalConfig::default()
+        };
 
         assert_eq!(cfg.validate(), Err(GlobalConfigError::RootSshKeys));
     }
 
     #[test]
     fn multiple_ssh_keys_fail_on_first_invalid() {
-        let mut cfg = GlobalConfig::default();
-        cfg.root_ssh_keys = Some(vec![
-            "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6sR1zF9Q3y6Jv5k1p2b3c4d5e6f7g8h9i0j test@example"
-                .to_string(),
-            "ssh-ed25519 INVALIDKEY test2@example".to_string(),
-        ]);
+        let cfg = GlobalConfig {
+            root_ssh_keys: Some(vec![
+                "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIB6sR1zF9Q3y6Jv5k1p2b3c4d5e6f7g8h9i0j test@example"
+                    .to_string(),
+                "ssh-ed25519 INVALIDKEY test2@example".to_string(),
+            ]),
+            ..GlobalConfig::default()
+        };
 
         assert_eq!(cfg.validate(), Err(GlobalConfigError::RootSshKeys));
     }
 
     #[test]
     fn no_ssh_keys_is_valid() {
-        let mut cfg = GlobalConfig::default();
-        cfg.root_ssh_keys = None;
+        let cfg = GlobalConfig {
+            root_ssh_keys: None,
+            ..GlobalConfig::default()
+        };
 
         assert_eq!(cfg.validate(), Ok(()));
     }

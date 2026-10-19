@@ -2,112 +2,111 @@ use crate::iso::constants::{ISO_URL_REGEX_PATTERN, PROX_DL_PG_URL};
 use oxdl::validator::{is_valid_sha256, is_valid_url};
 use regex::Regex;
 use reqwest::Client;
-use scraper::{Html, Selector};
-use std::error::Error;
+use scraper::{ElementRef, Html, Selector};
+use std::fmt;
+
+const SEL_LATEST: &str = "ul.latest-downloads";
+const SEL_ENTRY: &str = "li";
+const SEL_BUTTONS: &str = "div.download-entry-buttons";
+const SEL_PRIMARY: &str = "a.button-primary";
+const SEL_INFO: &str = "div.download-entry-info";
+const SEL_SHASUM: &str = "div.download-entry-shasum";
+const SEL_CODE: &str = "code";
+const ISO_ENTRY: &str = "li with a Proxmox VE ISO download link";
+
+#[derive(Debug)]
+pub enum IsoError {
+    Fetch(reqwest::Error),
+    Layout(&'static str),
+    InvalidIsoUrl(String),
+    InvalidChecksum(String),
+    Download(oxdl::DownloadError),
+    Verify(std::io::Error),
+}
+
+impl fmt::Display for IsoError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Fetch(e) => write!(f, "could not fetch the Proxmox download page: {e}"),
+            Self::Layout(selector) => {
+                write!(f, "download page layout changed: `{selector}` not found")
+            }
+            Self::InvalidIsoUrl(url) => write!(f, "scraped ISO URL is not a Proxmox ISO: {url}"),
+            Self::InvalidChecksum(sum) => write!(f, "scraped checksum is not SHA-256: {sum}"),
+            Self::Download(e) => write!(f, "download failed: {e}"),
+            Self::Verify(e) => write!(f, "could not read the existing ISO: {e}"),
+        }
+    }
+}
+
+impl std::error::Error for IsoError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Fetch(e) => Some(e),
+            Self::Download(e) => Some(e),
+            Self::Verify(e) => Some(e),
+            _ => None,
+        }
+    }
+}
+
+impl From<reqwest::Error> for IsoError {
+    fn from(e: reqwest::Error) -> Self {
+        Self::Fetch(e)
+    }
+}
+
+impl From<oxdl::DownloadError> for IsoError {
+    fn from(e: oxdl::DownloadError) -> Self {
+        Self::Download(e)
+    }
+}
 
 /// Fetches the Proxmox VE download page HTML content.
-///
-/// # Returns
-/// A string containing the HTML content of the download page.
-/// # Errors
-/// Returns an error if the HTTP request fails.
-pub async fn fetch_dl_page() -> Result<String, Box<dyn Error>> {
-    let client = Client::new();
-    let resp = client.get(PROX_DL_PG_URL).send().await?;
-    let resp = resp.error_for_status()?;
-    Ok(resp.text().await?)
+pub async fn fetch_dl_page() -> Result<String, IsoError> {
+    let resp = Client::new().get(PROX_DL_PG_URL).send().await?;
+    Ok(resp.error_for_status()?.text().await?)
 }
 
 /// Validates the scraped ISO URL and SHA256 checksum.
-///
-/// # Arguments
-/// * `iso_url` - The ISO URL to validate.
-/// * `sha256_checksum` - The SHA256 checksum to validate.
-/// # Returns
-/// Returns Ok(()) if both the ISO URL and SHA256 checksum are valid, otherwise returns an error.
-/// # Errors
-/// Returns an error if validation fails.
-pub fn validate_return_data(iso_url: &str, sha256_checksum: &str) -> Result<(), Box<dyn Error>> {
-    if !is_valid_url(iso_url) {
-        return Err("Invalid ISO URL".into());
+pub fn validate_return_data(iso_url: &str, sha256_checksum: &str) -> Result<(), IsoError> {
+    let pattern = Regex::new(ISO_URL_REGEX_PATTERN)
+        .map_err(|_| IsoError::InvalidIsoUrl(iso_url.to_string()))?;
+    if !is_valid_url(iso_url) || !pattern.is_match(iso_url) {
+        return Err(IsoError::InvalidIsoUrl(iso_url.to_string()));
     }
-
-    let iso_url_regex = Regex::new(ISO_URL_REGEX_PATTERN)?;
-    if !iso_url_regex.is_match(iso_url) {
-        return Err("ISO URL does not match expected pattern".into());
-    }
-
     if !is_valid_sha256(sha256_checksum) {
-        return Err("Invalid SHA256 checksum".into());
+        return Err(IsoError::InvalidChecksum(sha256_checksum.to_string()));
     }
     Ok(())
 }
 
-/// Scrapes the Proxmox VE download page to extract the latest ISO URL and its SHA256 checksum.
-///
-/// # Returns
-/// A tuple containing the ISO URL and SHA256 checksum as strings.
-/// # Errors
-/// Returns an error if the scraping or data validation fails.
-pub async fn get_latest_iso_info() -> Result<(String, String), Box<dyn Error>> {
-    let html = fetch_dl_page().await?;
-    let document = Html::parse_document(&html);
+fn select<'a>(scope: ElementRef<'a>, css: &'static str) -> Result<ElementRef<'a>, IsoError> {
+    let selector = Selector::parse(css).map_err(|_| IsoError::Layout(css))?;
+    scope.select(&selector).next().ok_or(IsoError::Layout(css))
+}
 
-    let sel_latest = Selector::parse("ul.latest-downloads")?;
-    let sel_li = Selector::parse("li")?;
-    let sel_buttons = Selector::parse("div.download-entry-buttons")?;
-    let sel_primary = Selector::parse("a.button-primary")?;
-    let sel_info = Selector::parse("div.download-entry-info")?;
-    let sel_dl = Selector::parse("dl")?;
-    let sel_shasum = Selector::parse("div.download-entry-shasum")?;
-    let sel_dd = Selector::parse("dd")?;
-    let sel_code = Selector::parse("code")?;
+fn primary_href(entry: ElementRef<'_>) -> Option<String> {
+    let link = select(select(entry, SEL_BUTTONS).ok()?, SEL_PRIMARY).ok()?;
+    link.value().attr("href").map(str::to_string)
+}
 
-    let latest = document
-        .select(&sel_latest)
-        .next()
-        .ok_or("Latest downloads section not found")?;
+/// Extracts the newest ISO URL and its SHA256 checksum from download page HTML.
+/// The newest ISO is the first list entry whose primary link is a Proxmox VE ISO.
+pub fn parse_latest_iso_info(html: &str) -> Result<(String, String), IsoError> {
+    let document = Html::parse_document(html);
+    let latest = select(document.root_element(), SEL_LATEST)?;
+    let entries = Selector::parse(SEL_ENTRY).map_err(|_| IsoError::Layout(SEL_ENTRY))?;
+    let pattern = Regex::new(ISO_URL_REGEX_PATTERN).map_err(|_| IsoError::Layout(ISO_ENTRY))?;
+    let (entry, iso_url) = latest
+        .select(&entries)
+        .filter_map(|entry| primary_href(entry).map(|href| (entry, href)))
+        .find(|(_, href)| pattern.is_match(href))
+        .ok_or(IsoError::Layout(ISO_ENTRY))?;
 
-    let second_li = latest
-        .select(&sel_li)
-        .nth(1)
-        .ok_or("Second list item not found")?;
-
-    let buttons = second_li
-        .select(&sel_buttons)
-        .next()
-        .ok_or("Download buttons not found")?;
-
-    let iso_url = buttons
-        .select(&sel_primary)
-        .next()
-        .ok_or("ISO link not found")?
-        .value()
-        .attr("href")
-        .ok_or("ISO link href not found")?
-        .to_string();
-
-    let info = second_li
-        .select(&sel_info)
-        .next()
-        .ok_or("Download entry info not found")?;
-
-    let sha256_checksum = info
-        .select(&sel_dl)
-        .next()
-        .ok_or("DL element not found")?
-        .select(&sel_shasum)
-        .next()
-        .ok_or("SHA sum element not found")?
-        .select(&sel_dd)
-        .next()
-        .ok_or("DD element not found")?
-        .select(&sel_code)
-        .next()
-        .ok_or("Code element not found")?
+    let sha256_checksum = select(select(select(entry, SEL_INFO)?, SEL_SHASUM)?, SEL_CODE)?
         .text()
-        .next()
-        .ok_or("Checksum text not found")?
+        .collect::<String>()
         .trim()
         .to_string();
 
@@ -115,19 +114,93 @@ pub async fn get_latest_iso_info() -> Result<(String, String), Box<dyn Error>> {
     Ok((iso_url, sha256_checksum))
 }
 
-#[cfg(all(test, feature = "iso-scraper-tests"))]
+/// Scrapes the Proxmox VE download page for the latest ISO URL and its SHA256 checksum.
+pub async fn get_latest_iso_info() -> Result<(String, String), IsoError> {
+    parse_latest_iso_info(&fetch_dl_page().await?)
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
+    const ISO_URL: &str = "https://enterprise.proxmox.com/iso/proxmox-ve_9.1-1.iso";
+    const ISO_SHA256: &str = "6d8f5afc78c0c66812d7272cde7c8b98be7eb54401ceb045400db05eb5ae6d22";
+
+    const OLDER_ISO_URL: &str = "https://enterprise.proxmox.com/iso/proxmox-ve_8.4-1.iso";
+    const OLDER_SHA256: &str = "1111111111111111111111111111111111111111111111111111111111111111";
+
+    fn entry(url: &str, sum: Option<&str>) -> String {
+        let shasum = sum.map_or(String::new(), |sum| {
+            format!(
+                r#"<div class="download-entry-shasum"><dt>SHA256SUM</dt><dd><code> {sum} </code></dd></div>"#
+            )
+        });
+        format!(
+            r#"<li><div class="download-entry box-light">
+  <div class="download-entry-info"><dl><div><dt>Version</dt><dd>x</dd></div>{shasum}</dl></div>
+  <div class="download-entry-buttons"><a class="button button-primary" href="{url}">Download</a></div>
+</div></li>"#
+        )
+    }
+
+    fn page(url: &str, sum: &str) -> String {
+        format!(
+            r#"<html><body><ul class="mod-list latest-downloads">
+{}
+{}
+{}
+</ul></body></html>"#,
+            entry("/images/download/pve/agreements/Agreement.pdf", None),
+            entry(url, Some(sum)),
+            entry(OLDER_ISO_URL, Some(OLDER_SHA256)),
+        )
+    }
+
+    #[test]
+    fn picks_the_first_iso_entry_and_skips_other_downloads() {
+        let (url, sum) = parse_latest_iso_info(&page(ISO_URL, ISO_SHA256)).expect("parse");
+        assert_eq!(url, ISO_URL);
+        assert_eq!(sum, ISO_SHA256);
+    }
+
+    #[test]
+    fn missing_section_is_a_layout_error() {
+        let err = parse_latest_iso_info("<html><body></body></html>").expect_err("layout");
+        assert!(matches!(err, IsoError::Layout(SEL_LATEST)), "{err}");
+    }
+
+    #[test]
+    fn page_without_an_iso_entry_is_a_layout_error() {
+        let html = format!(
+            r#"<ul class="latest-downloads">{}</ul>"#,
+            entry("/images/download/pve/agreements/Agreement.pdf", None)
+        );
+        let err = parse_latest_iso_info(&html).expect_err("no iso");
+        assert!(matches!(err, IsoError::Layout(ISO_ENTRY)), "{err}");
+    }
+
+    #[test]
+    fn wrong_host_is_rejected() {
+        let err = validate_return_data("https://example.com/proxmox-ve_9.1-1.iso", ISO_SHA256)
+            .expect_err("url");
+        assert!(matches!(err, IsoError::InvalidIsoUrl(_)), "{err}");
+    }
+
+    #[test]
+    fn short_checksum_is_rejected() {
+        let err = parse_latest_iso_info(&page(ISO_URL, &ISO_SHA256[..40])).expect_err("sum");
+        assert!(matches!(err, IsoError::InvalidChecksum(_)), "{err}");
+    }
+}
+
+#[cfg(all(test, feature = "iso-scraper-tests"))]
+mod live_tests {
+    use super::*;
+
     #[tokio::test]
-    async fn test_get_latest_iso_info() {
-        let result = get_latest_iso_info().await;
-        assert!(result.is_ok());
-        let (iso_url, sha256_checksum) = result.unwrap();
-        let iso_url_regex = Regex::new(ISO_URL_REGEX_PATTERN).unwrap();
-        assert!(iso_url_regex.is_match(&iso_url));
+    async fn live_page_parses() {
+        let (iso_url, sha256_checksum) = get_latest_iso_info().await.expect("scrape");
+        assert!(iso_url.ends_with(".iso"));
         assert_eq!(sha256_checksum.len(), 64);
-        println!("ISO URL: {}", iso_url);
-        println!("SHA256 Checksum: {}", sha256_checksum);
     }
 }
